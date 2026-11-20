@@ -119,6 +119,7 @@ _VALIDATION_CODES = {
     "value_error": "INVALID",
     "enum": "INVALID_CHOICE",
     "literal_error": "INVALID_CHOICE",
+    "extra_forbidden": "NOT_ALLOWED",
 }
 
 
@@ -174,3 +175,15 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]
     app.add_exception_handler(StarletteHTTPException, http_error_handler)  # type: ignore[arg-type]
     app.add_exception_handler(Exception, unhandled_error_handler)
+
+
+class FileTooLargeError(AppError):
+    status_code = status.HTTP_413_CONTENT_TOO_LARGE
+    code = "FILE_TOO_LARGE"
+    message = "File is too large"
+
+
+class UnsupportedFileTypeError(AppError):
+    status_code = status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
+    code = "UNSUPPORTED_FILE_TYPE"
+    message = "Unsupported file type"

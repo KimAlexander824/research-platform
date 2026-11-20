@@ -11,12 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.accounts.exceptions import AccountDisabledError, InvalidTokenError
 from app.accounts.models import User
 from app.accounts.repository import SessionRepository, UserRepository
-from app.accounts.service import AccountEmailService, AuthService, ClientInfo, SendEmail
+from app.accounts.service import AccountEmailService, AuthService, ClientInfo, ProfileService, SendEmail
 from app.core.database import get_db
 from app.core.errors import UnauthorizedError
 from app.core.mail import EmailMessage, MailSender, get_mail_sender
 from app.core.rate_limit import client_ip
 from app.core.security import decode_access_token
+from app.core.storage import Storage, get_storage
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
@@ -87,6 +88,13 @@ def get_client_info(request: Request) -> ClientInfo:
 
 
 CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
+def get_profile_service(
+    db: DbSession, storage: Annotated[Storage, Depends(get_storage)], send_email: SendEmailDep
+) -> ProfileService:
+    return ProfileService(db, storage, send_email)
+
+
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+ProfileServiceDep = Annotated[ProfileService, Depends(get_profile_service)]
 AccountEmailServiceDep = Annotated[AccountEmailService, Depends(get_account_email_service)]
 ClientInfoDep = Annotated[ClientInfo, Depends(get_client_info)]

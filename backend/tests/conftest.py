@@ -17,7 +17,7 @@ os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
 os.environ["REDIS_URL"] = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/15")
 os.environ["ENVIRONMENT"] = "development"
 
-from collections.abc import AsyncIterator  # noqa: E402
+from collections.abc import AsyncIterator, Iterator  # noqa: E402
 
 import asyncpg  # noqa: E402
 import pytest  # noqa: E402
@@ -29,6 +29,8 @@ from sqlalchemy.engine import make_url  # noqa: E402
 
 from app.core.database import engine  # noqa: E402
 from app.core.mail import EmailMessage, get_mail_sender  # noqa: E402
+from app.core.storage import Storage, get_storage  # noqa: E402
+from moto import mock_aws  # noqa: E402
 from app.core.models_registry import Base  # noqa: E402
 from app.core.redis import close_redis, get_redis  # noqa: E402
 from app.main import create_app  # noqa: E402
@@ -87,9 +89,26 @@ def outbox() -> FakeMailSender:
 
 
 @pytest.fixture
-def app(outbox: FakeMailSender) -> FastAPI:
+def storage() -> Iterator[Storage]:
+    """Хранилище в памяти (moto эмулирует S3) — для тестов не нужен MinIO."""
+    with mock_aws():
+        storage = Storage(
+            endpoint_url=None,
+            public_endpoint_url=None,
+            access_key="test",
+            secret_key="test",
+            region="us-east-1",
+            bucket="test-bucket",
+        )
+        storage._client.create_bucket(Bucket="test-bucket")
+        yield storage
+
+
+@pytest.fixture
+def app(outbox: FakeMailSender, storage: Storage) -> FastAPI:
     app = create_app()
     app.dependency_overrides[get_mail_sender] = lambda: outbox
+    app.dependency_overrides[get_storage] = lambda: storage
     return app
 
 

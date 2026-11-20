@@ -1,10 +1,12 @@
-"""Пользователи и сессии (B2)."""
+"""Пользователи, профиль и сессии (B2)."""
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base, IdMixin, TimestampMixin, str_enum
@@ -29,6 +31,18 @@ class User(IdMixin, TimestampMixin, Base):
     language: Mapped[Language] = mapped_column(
         str_enum(Language, length=5), default=DEFAULT_LANGUAGE, server_default=DEFAULT_LANGUAGE.value
     )
+
+    # Профиль (B2)
+    phone: Mapped[str | None] = mapped_column(String(32))
+    avatar_key: Mapped[str | None] = mapped_column(String(512))
+    # Научная информация
+    organization: Mapped[str | None] = mapped_column(String(255))
+    position: Mapped[str | None] = mapped_column(String(255))
+    academic_degree: Mapped[str | None] = mapped_column(String(255))
+    academic_title: Mapped[str | None] = mapped_column(String(255))
+    research_interests: Mapped[str | None] = mapped_column(Text)
+    # Настройки пользователя (произвольные настройки интерфейса, задаёт фронтенд)
+    preferences: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
 
     @property
     def email_verified(self) -> bool:

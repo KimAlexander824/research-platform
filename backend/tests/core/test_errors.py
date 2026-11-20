@@ -102,3 +102,9 @@ async def test_unhandled_error_hides_details(client: AsyncClient) -> None:
     assert body == {"error": {"code": "INTERNAL_ERROR", "message": "Internal server error"}}
     assert "secret" not in response.text
 
+
+
+async def test_unknown_field_is_rejected(client: AsyncClient) -> None:
+    response = await client.post("/test/items", json={"title": "Thesis", "pageCount": 1, "fullname": "x"})
+    assert response.status_code == 422
+    assert response.json()["error"]["fields"] == {"fullname": ["NOT_ALLOWED"]}

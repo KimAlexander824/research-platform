@@ -1,5 +1,6 @@
 """Точка входа приложения."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -11,10 +12,18 @@ from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.core.log import log_requests, setup_logging
 from app.core.redis import close_redis
+from app.core.storage import get_storage
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    if settings.S3_AUTO_CREATE_BUCKET:
+        try:
+            await get_storage().ensure_bucket()
+        except Exception:
+            logger.exception("Storage is not available: bucket %s was not checked", settings.S3_BUCKET)
     yield
     await close_redis()
 

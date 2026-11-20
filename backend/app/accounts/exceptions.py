@@ -5,8 +5,8 @@ class EmailAlreadyExistsError(ConflictError):
     code = "EMAIL_ALREADY_EXISTS"
     message = "User with this email already exists"
 
-    def __init__(self) -> None:
-        super().__init__(fields={"email": ["ALREADY_EXISTS"]})
+    def __init__(self, field: str = "email") -> None:
+        super().__init__(fields={field: ["ALREADY_EXISTS"]})
 
 
 class InvalidCredentialsError(UnauthorizedError):
@@ -55,3 +55,12 @@ class EmailCooldownError(AppError):
     status_code = 429
     code = "EMAIL_COOLDOWN"
     message = "Email was sent recently, try again later"
+
+
+class InvalidPasswordError(AppError):
+    status_code = 400
+    code = "INVALID_PASSWORD"
+    message = "Current password is incorrect"
+
+    def __init__(self) -> None:
+        super().__init__(fields={"currentPassword": ["INVALID"]})

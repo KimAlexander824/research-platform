@@ -16,17 +16,21 @@ from app.accounts.exceptions import (
     EmailCooldownError,
     InvalidCredentialsError,
     InvalidEmailTokenError,
+    InvalidPasswordError,
     InvalidRefreshTokenError,
     SessionNotFoundError,
     TooManyLoginAttemptsError,
 )
 from app.accounts.models import EmailToken, EmailTokenPurpose, User, UserRole, UserSession
 from app.accounts.repository import EmailTokenRepository, SessionRepository, UserRepository
-from app.accounts.schemas import LoginIn, RegisterIn, ResetPasswordIn
+from app.accounts.schemas import ChangeEmailIn, LoginIn, ProfileUpdateIn, RegisterIn, ResetPasswordIn
 from app.core.config import settings
+from app.core.errors import FileTooLargeError, UnsupportedFileTypeError
+from app.core.files import detect_image_type
 from app.core.language import DEFAULT_LANGUAGE
 from app.core.mail import EmailMessage
 from app.core.redis import get_redis
+from app.core.storage import Storage
 from app.core.security import (
     create_access_token,
     generate_secure_token,
@@ -287,3 +291,85 @@ class AccountEmailService:
             )
         )
         return raw
+
+
+# Поля API -> поля модели (settings в API хранится как preferences)
+_PROFILE_FIELDS = {
+    "full_name": "full_name",
+    "phone": "phone",
+    "language": "language",
+    "organization": "organization",
+    "position": "position",
+    "academic_degree": "academic_degree",
+    "academic_title": "academic_title",
+    "research_interests": "research_interests",
+    "settings": "preferences",
+}
+
+
+class ProfileService:
+    """Профиль пользователя (B2): данные, научная информация, язык, настройки, фото, смена email."""
+
+    def __init__(self, db: AsyncSession, storage: Storage, send_email: SendEmail) -> None:
+        self.db = db
+        self.storage = storage
+        self.users = UserRepository(db)
+        self.emails = AccountEmailService(db, send_email)
+
+    def avatar_url(self, user: User) -> str | None:
+        return self.storage.presigned_get_url(user.avatar_key) if user.avatar_key else None
+
+    async def update(self, user: User, data: ProfileUpdateIn) -> User:
+        for api_field, value in data.model_dump(exclude_unset=True).items():
+            setattr(user, _PROFILE_FIELDS[api_field], value)
+        await self.db.commit()
+        await self.db.refresh(user)
+        return user
+
+    async def change_email(self, user: User, data: ChangeEmailIn) -> User:
+        # Пароль защищает от захвата аккаунта, если access-токен попал к постороннему
+        if not verify_password(data.current_password, user.password_hash):
+            raise InvalidPasswordError()
+        if data.new_email == user.email:
+            return user
+        if await self.users.get_by_email(data.new_email) is not None:
+            raise EmailAlreadyExistsError(field="newEmail")
+
+        user.email = data.new_email
+        user.email_verified_at = None
+        try:
+            await self.db.flush()
+        except IntegrityError as exc:
+            await self.db.rollback()
+            raise EmailAlreadyExistsError(field="newEmail") from exc
+        await self.emails.send_verification(user)
+        await self.db.commit()
+        await self.db.refresh(user)
+        return user
+
+    async def upload_avatar(self, user: User, data: bytes) -> User:
+        if len(data) > settings.AVATAR_MAX_SIZE_MB * 1024 * 1024:
+            raise FileTooLargeError(f"Max size is {settings.AVATAR_MAX_SIZE_MB} MB")
+        file_type = detect_image_type(data)
+        if file_type is None:
+            raise UnsupportedFileTypeError("Allowed formats: JPEG, PNG, WEBP")
+
+        key = f"avatars/{user.id}/{uuid4()}.{file_type.extension}"
+        await self.storage.put(key, data, file_type.mime_type)
+
+        old_key = user.avatar_key
+        user.avatar_key = key
+        await self.db.commit()
+        await self.db.refresh(user)
+        if old_key:
+            await self.storage.delete(old_key)
+        return user
+
+    async def delete_avatar(self, user: User) -> User:
+        old_key = user.avatar_key
+        if old_key:
+            user.avatar_key = None
+            await self.db.commit()
+            await self.db.refresh(user)
+            await self.storage.delete(old_key)
+        return user

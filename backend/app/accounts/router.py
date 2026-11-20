@@ -3,13 +3,22 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Cookie, Depends, Response, status
+from fastapi import APIRouter, Cookie, Depends, File, Response, UploadFile, status
 
-from app.accounts.dependencies import AccountEmailServiceDep, AuthServiceDep, ClientInfoDep, CurrentUserDep
+from app.accounts.dependencies import (
+    AccountEmailServiceDep,
+    AuthServiceDep,
+    ClientInfoDep,
+    CurrentUserDep,
+    ProfileServiceDep,
+)
+from app.accounts.models import User
 from app.accounts.schemas import (
+    ChangeEmailIn,
     EmailTokenIn,
     ForgotPasswordIn,
     LoginIn,
+    ProfileUpdateIn,
     RegisterIn,
     ResetPasswordIn,
     SessionOut,
@@ -165,6 +174,50 @@ async def reset_password(data: ResetPasswordIn, service: AccountEmailServiceDep)
     await service.reset_password(data)
 
 
-@me_router.get("/me", summary="Текущий пользователь")
-async def me(current: CurrentUserDep) -> UserOut:
-    return UserOut.model_validate(current.user)
+def _user_out(user: User, profile: ProfileServiceDep) -> UserOut:
+    return UserOut.model_validate(user).model_copy(update={"avatar_url": profile.avatar_url(user)})
+
+
+@me_router.get("/me", summary="Профиль текущего пользователя")
+async def me(current: CurrentUserDep, profile: ProfileServiceDep) -> UserOut:
+    return _user_out(current.user, profile)
+
+
+@me_router.patch(
+    "/me",
+    summary="Редактировать профиль",
+    description="Передаются только изменяемые поля. `null` очищает необязательное поле "
+    "(телефон, научная информация). Email меняется отдельным запросом.",
+)
+async def update_me(data: ProfileUpdateIn, current: CurrentUserDep, profile: ProfileServiceDep) -> UserOut:
+    return _user_out(await profile.update(current.user, data), profile)
+
+
+@me_router.post(
+    "/me/email",
+    summary="Сменить email",
+    description="Требует текущий пароль. Новый email становится неподтверждённым, "
+    "на него отправляется письмо для подтверждения.",
+)
+async def change_email(data: ChangeEmailIn, current: CurrentUserDep, profile: ProfileServiceDep) -> UserOut:
+    return _user_out(await profile.change_email(current.user, data), profile)
+
+
+@me_router.put(
+    "/me/avatar",
+    summary="Загрузить фото профиля",
+    description="JPEG, PNG или WEBP. Старое фото удаляется.",
+)
+async def upload_avatar(
+    current: CurrentUserDep,
+    profile: ProfileServiceDep,
+    file: Annotated[UploadFile, File(description="Изображение JPEG, PNG или WEBP")],
+) -> UserOut:
+    # Читаем на 1 байт больше лимита — этого достаточно, чтобы понять, что файл слишком большой
+    data = await file.read(settings.AVATAR_MAX_SIZE_MB * 1024 * 1024 + 1)
+    return _user_out(await profile.upload_avatar(current.user, data), profile)
+
+
+@me_router.delete("/me/avatar", summary="Удалить фото профиля")
+async def delete_avatar(current: CurrentUserDep, profile: ProfileServiceDep) -> UserOut:
+    return _user_out(await profile.delete_avatar(current.user), profile)

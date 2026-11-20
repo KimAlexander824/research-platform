@@ -63,6 +63,22 @@ class Settings(BaseSettings):
     MAIL_FROM: str = "Research Platform <onboarding@resend.dev>"
     RESEND_API_KEY: str = ""
 
+    # Файловое хранилище (S3-совместимое: RustFS локально, любое S3 в production)
+    S3_ENDPOINT_URL: str = "http://localhost:9000"
+    # Адрес хранилища, доступный браузеру (для временных ссылок на скачивание)
+    S3_PUBLIC_ENDPOINT_URL: str = "http://localhost:9000"
+    S3_ACCESS_KEY: str = "research"
+    S3_SECRET_KEY: str = "research-secret"
+    S3_REGION: str = "us-east-1"
+    S3_BUCKET: str = "research-files"
+    # Создавать бакет при старте, если его нет (удобно в разработке)
+    S3_AUTO_CREATE_BUCKET: bool = True
+    # Срок действия временной ссылки на файл, секунды
+    S3_PRESIGNED_URL_TTL_SECONDS: int = 3600
+
+    # Фото профиля
+    AVATAR_MAX_SIZE_MB: int = 5
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def split_origins(cls, value: object) -> object:

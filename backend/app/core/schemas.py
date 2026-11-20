@@ -9,4 +9,7 @@ class BaseSchema(BaseModel):
         alias_generator=to_camel,
         populate_by_name=True,
         from_attributes=True,
+        # Неизвестные поля в запросе — ошибка 422 (NOT_ALLOWED), а не молчаливый игнор:
+        # так фронтенд сразу видит опечатки и попытки изменить недоступные поля
+        extra="forbid",
     )
