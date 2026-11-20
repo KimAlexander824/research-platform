@@ -1,5 +1,6 @@
 """Зависимости FastAPI для авторизации."""
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated
 from uuid import UUID
@@ -9,11 +10,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.accounts.exceptions import AccountDisabledError, InvalidTokenError
-from app.accounts.models import User
+from app.accounts.models import User, UserRole
 from app.accounts.repository import SessionRepository, UserRepository
 from app.accounts.service import AccountEmailService, AuthService, ClientInfo, ProfileService, SendEmail
 from app.core.database import get_db
-from app.core.errors import UnauthorizedError
+from app.core.errors import ForbiddenError, UnauthorizedError
 from app.core.mail import EmailMessage, MailSender, get_mail_sender
 from app.core.rate_limit import client_ip
 from app.core.security import decode_access_token
@@ -59,6 +60,20 @@ async def get_current_user(
         raise AccountDisabledError()
 
     return CurrentUser(user=user, session_id=session_id)
+
+
+def require_roles(*roles: UserRole) -> Callable[..., Awaitable[CurrentUser]]:
+    """Доступ только для указанных системных ролей:
+
+    @router.get("/...", dependencies=[Depends(require_roles(UserRole.ADMIN))])
+    """
+
+    async def dependency(current: Annotated[CurrentUser, Depends(get_current_user)]) -> CurrentUser:
+        if current.user.role not in roles:
+            raise ForbiddenError("Insufficient role")
+        return current
+
+    return dependency
 
 
 def get_send_email(

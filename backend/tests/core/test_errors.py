@@ -108,3 +108,11 @@ async def test_unknown_field_is_rejected(client: AsyncClient) -> None:
     response = await client.post("/test/items", json={"title": "Thesis", "pageCount": 1, "fullname": "x"})
     assert response.status_code == 422
     assert response.json()["error"]["fields"] == {"fullname": ["NOT_ALLOWED"]}
+
+
+async def test_invalid_json_body(client: AsyncClient) -> None:
+    response = await client.post(
+        "/test/items", content=b'{"title": "Thesis"", "pageCount": 1}', headers={"Content-Type": "application/json"}
+    )
+    assert response.status_code == 422
+    assert response.json() == {"error": {"code": "INVALID_JSON", "message": "Request body is not valid JSON"}}

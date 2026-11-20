@@ -24,6 +24,7 @@ from app.accounts.exceptions import (
 from app.accounts.models import EmailToken, EmailTokenPurpose, User, UserRole, UserSession
 from app.accounts.repository import EmailTokenRepository, SessionRepository, UserRepository
 from app.accounts.schemas import ChangeEmailIn, LoginIn, ProfileUpdateIn, RegisterIn, ResetPasswordIn
+from app.audit.service import AuditLogger, diff
 from app.core.config import settings
 from app.core.errors import FileTooLargeError, UnsupportedFileTypeError
 from app.core.files import detect_image_type
@@ -90,6 +91,7 @@ class AuthService:
         self.sessions = SessionRepository(db)
         self.attempts = LoginAttempts()
         self.emails = AccountEmailService(db, send_email)
+        self.audit = AuditLogger(db)
 
     async def register(self, data: RegisterIn, client: ClientInfo) -> AuthTokens:
         if await self.users.get_by_email(data.email) is not None:
@@ -113,6 +115,14 @@ class AuthService:
 
         tokens = self._start_session(user, client)
         await self.emails.send_verification(user)
+        self.audit.log(
+            "user.registered",
+            entity_type="user",
+            entity_id=user.id,
+            actor_id=user.id,
+            data={"email": user.email},
+            ip_address=client.ip_address,
+        )
         await self.db.commit()
         return tokens
 
@@ -222,6 +232,7 @@ class AccountEmailService:
         self.sessions = SessionRepository(db)
         self.tokens = EmailTokenRepository(db)
         self.cooldown = EmailCooldown()
+        self.audit = AuditLogger(db)
 
     async def send_verification(self, user: User) -> None:
         token = await self._issue(user, EmailTokenPurpose.VERIFY_EMAIL, timedelta(hours=settings.EMAIL_VERIFICATION_TTL_HOURS))
@@ -247,6 +258,10 @@ class AccountEmailService:
         token.used_at = now
         if user.email_verified_at is None:
             user.email_verified_at = now
+            self.audit.log(
+                "user.email_verified", entity_type="user", entity_id=user.id, actor_id=user.id,
+                data={"email": user.email},
+            )
         await self.db.commit()
 
     async def request_password_reset(self, email: str) -> None:
@@ -276,6 +291,7 @@ class AccountEmailService:
             user.email_verified_at = now
         # После смены пароля все устройства выходят из аккаунта
         await self.sessions.revoke_all_for_user(user.id)
+        self.audit.log("user.password_reset", entity_type="user", entity_id=user.id, actor_id=user.id)
         await self.db.commit()
         await LoginAttempts().reset(user.email)
 
@@ -315,13 +331,21 @@ class ProfileService:
         self.storage = storage
         self.users = UserRepository(db)
         self.emails = AccountEmailService(db, send_email)
+        self.audit = AuditLogger(db)
 
     def avatar_url(self, user: User) -> str | None:
         return self.storage.presigned_get_url(user.avatar_key) if user.avatar_key else None
 
     async def update(self, user: User, data: ProfileUpdateIn) -> User:
-        for api_field, value in data.model_dump(exclude_unset=True).items():
-            setattr(user, _PROFILE_FIELDS[api_field], value)
+        new = {_PROFILE_FIELDS[f]: v for f, v in data.model_dump(exclude_unset=True).items()}
+        old = {field: getattr(user, field) for field in new}
+        for field, value in new.items():
+            setattr(user, field, value)
+        changes = diff(old, new)
+        if changes:
+            self.audit.log(
+                "user.profile_updated", entity_type="user", entity_id=user.id, actor_id=user.id, data=changes
+            )
         await self.db.commit()
         await self.db.refresh(user)
         return user
@@ -335,6 +359,10 @@ class ProfileService:
         if await self.users.get_by_email(data.new_email) is not None:
             raise EmailAlreadyExistsError(field="newEmail")
 
+        self.audit.log(
+            "user.email_changed", entity_type="user", entity_id=user.id, actor_id=user.id,
+            data={"email": [user.email, data.new_email]},
+        )
         user.email = data.new_email
         user.email_verified_at = None
         try:
@@ -359,6 +387,7 @@ class ProfileService:
 
         old_key = user.avatar_key
         user.avatar_key = key
+        self.audit.log("user.avatar_changed", entity_type="user", entity_id=user.id, actor_id=user.id)
         await self.db.commit()
         await self.db.refresh(user)
         if old_key:
@@ -369,6 +398,7 @@ class ProfileService:
         old_key = user.avatar_key
         if old_key:
             user.avatar_key = None
+            self.audit.log("user.avatar_deleted", entity_type="user", entity_id=user.id, actor_id=user.id)
             await self.db.commit()
             await self.db.refresh(user)
             await self.storage.delete(old_key)

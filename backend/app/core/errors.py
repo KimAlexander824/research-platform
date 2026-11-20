@@ -31,6 +31,7 @@ class ErrorCode:
     PAYLOAD_TOO_LARGE = "PAYLOAD_TOO_LARGE"
     TOO_MANY_REQUESTS = "TOO_MANY_REQUESTS"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+    INVALID_JSON = "INVALID_JSON"
 
 
 class AppError(Exception):
@@ -138,6 +139,13 @@ async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
 
 
 async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+    # Тело запроса — не валидный JSON (например, лишняя кавычка): полей тут нет, есть только место ошибки
+    if any(err.get("type") == "json_invalid" for err in exc.errors()):
+        return JSONResponse(
+            status_code=422,
+            content=error_body(ErrorCode.INVALID_JSON, "Request body is not valid JSON"),
+        )
+
     fields: dict[str, list[str]] = {}
     for err in exc.errors():
         name = _field_name(tuple(err.get("loc", ())))
