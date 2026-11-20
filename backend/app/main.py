@@ -1,5 +1,8 @@
 """Точка входа приложения."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -7,6 +10,13 @@ from app.api import api_router
 from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.core.log import log_requests, setup_logging
+from app.core.redis import close_redis
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    yield
+    await close_redis()
 
 
 def create_app() -> FastAPI:
@@ -18,6 +28,7 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
+        lifespan=lifespan,
     )
 
     app.add_middleware(

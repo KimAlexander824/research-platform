@@ -2,9 +2,10 @@
 
 from collections.abc import AsyncIterator
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, MetaData, func
+from sqlalchemy import DateTime, Enum, MetaData, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -22,6 +23,11 @@ NAMING_CONVENTION = {
 
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+
+def str_enum(enum_cls: type[StrEnum], length: int = 20) -> Enum:
+    """Enum хранится в БД строкой-значением (без отдельного типа PostgreSQL) — так проще добавлять значения."""
+    return Enum(enum_cls, native_enum=False, length=length, values_callable=lambda e: [m.value for m in e])
 
 
 class IdMixin:

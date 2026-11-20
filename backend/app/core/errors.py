@@ -47,11 +47,13 @@ class AppError(Exception):
         code: str | None = None,
         status_code: int | None = None,
         fields: dict[str, list[str]] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.message = message or self.message
         self.code = code or self.code
         self.status_code = status_code or self.status_code
         self.fields = fields
+        self.headers = headers
         super().__init__(self.message)
 
 
@@ -77,6 +79,12 @@ class ConflictError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = ErrorCode.CONFLICT
     message = "Conflict"
+
+
+class TooManyRequestsError(AppError):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = ErrorCode.TOO_MANY_REQUESTS
+    message = "Too many requests"
 
 
 def error_body(code: str, message: str, fields: dict[str, list[str]] | None = None) -> dict[str, Any]:
@@ -121,7 +129,11 @@ def _field_name(loc: tuple[Any, ...]) -> str:
 
 
 async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
-    return JSONResponse(status_code=exc.status_code, content=error_body(exc.code, exc.message, exc.fields))
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=error_body(exc.code, exc.message, exc.fields),
+        headers=exc.headers,
+    )
 
 
 async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
