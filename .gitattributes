@@ -1,0 +1,13 @@
+# Все текстовые файлы хранятся и выкачиваются с переводами строк LF.
+# Нужно, чтобы файлы одинаково работали на Windows и в Linux-контейнерах Docker.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.docx binary
+*.xlsx binary
+*.pptx binary
