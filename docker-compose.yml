@@ -27,6 +27,25 @@ services:
       timeout: 3s
       retries: 10
 
+  # S3-совместимое хранилище файлов для разработки (RustFS).
+  # Консоль: http://localhost:9001 (логин/пароль — S3_ACCESS_KEY / S3_SECRET_KEY)
+  storage:
+    image: rustfs/rustfs:latest
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-research}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-research-secret}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      # браузер скачивает файлы по временным ссылкам напрямую из хранилища
+      RUSTFS_CORS_ALLOWED_ORIGINS: "*"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - storage_data:/data
+
   api:
     build:
       context: ./backend
@@ -36,6 +55,10 @@ services:
       # внутри docker-сети сервисы доступны по имени, а не по localhost
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-research}:${POSTGRES_PASSWORD:-research}@postgres:5432/${POSTGRES_DB:-research}
       REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://storage:9000
+      S3_PUBLIC_ENDPOINT_URL: http://localhost:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-research}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-research-secret}
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
@@ -49,6 +72,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      storage:
+        condition: service_started
 
 volumes:
   postgres_data:
+  storage_data:

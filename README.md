@@ -9,7 +9,7 @@ frontend/   — веб-интерфейс
 
 ## Backend
 
-**Стек:** Python 3.13, FastAPI, PostgreSQL, SQLAlchemy 2 (async), Alembic, Redis, uv.
+**Стек:** Python 3.13, FastAPI, PostgreSQL, SQLAlchemy 2 (async), Alembic, Redis, S3-совместимое хранилище файлов, uv.
 
 ### Запуск через Docker
 
@@ -28,15 +28,16 @@ docker compose down          # остановить
 - API: http://localhost:8000
 - Swagger: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
+- Консоль файлового хранилища (RustFS): http://localhost:9001 — логин `research`, пароль `research-secret`
 
 Миграции применяются автоматически при старте контейнера `api`.
 
 ### Запуск без Docker (для разработки)
 
-Нужен [uv](https://docs.astral.sh/uv/). База и Redis запускаются в Docker:
+Нужен [uv](https://docs.astral.sh/uv/). База, Redis и хранилище запускаются в Docker:
 
 ```bash
-docker compose up -d postgres redis
+docker compose up -d postgres redis storage
 cd backend
 cp .env.example .env
 uv sync
@@ -46,7 +47,7 @@ uv run uvicorn app.main:app --reload
 
 ### Тесты
 
-Тесты используют PostgreSQL и Redis из Docker (отдельная база `research_test` и Redis DB 15 — данные разработки не затрагиваются):
+Тесты используют PostgreSQL и Redis из Docker (отдельная база `research_test` и Redis DB 15 — данные разработки не затрагиваются). Хранилище файлов в тестах эмулируется в памяти:
 
 ```bash
 docker compose up -d postgres redis
@@ -87,6 +88,14 @@ uv run alembic downgrade -1      # откатить последнюю
 | `MAIL_BACKEND` | `console` (письма в лог) или `resend` | `console` |
 | `MAIL_FROM` | Отправитель | `Research Platform <onboarding@resend.dev>` |
 | `RESEND_API_KEY` | API-ключ Resend (обязателен при `MAIL_BACKEND=resend`) | — |
+| `S3_ENDPOINT_URL` | Адрес S3-хранилища для API | `http://localhost:9000` |
+| `S3_PUBLIC_ENDPOINT_URL` | Адрес хранилища, доступный браузеру (для временных ссылок) | `http://localhost:9000` |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | Ключи доступа к хранилищу | `research` / `research-secret` |
+| `S3_REGION` | Регион | `us-east-1` |
+| `S3_BUCKET` | Бакет для файлов | `research-files` |
+| `S3_AUTO_CREATE_BUCKET` | Создавать бакет при старте | `true` |
+| `S3_PRESIGNED_URL_TTL_SECONDS` | Срок действия ссылки на файл, секунды | `3600` |
+| `AVATAR_MAX_SIZE_MB` | Максимальный размер фото профиля, МБ | `5` |
 
 ## Соглашения API
 
@@ -107,6 +116,8 @@ uv run alembic downgrade -1      # откатить последнюю
 
 `code` — стабильный код для фронтенда (переводится на язык интерфейса), `message` — техническое описание, `fields` — только для ошибок валидации.
 
+Неизвестные поля в теле запроса не игнорируются — возвращается `422` с кодом поля `NOT_ALLOWED`.
+
 ### Авторизация
 
 - `POST /auth/register`, `POST /auth/login` возвращают `{"accessToken", "tokenType", "expiresIn"}` и ставят refresh-токен в httpOnly cookie.
@@ -115,6 +126,17 @@ uv run alembic downgrade -1      # откатить последнюю
 - `GET /me` — текущий пользователь, роль, язык, подтверждён ли email.
 - Подтверждение email: ссылка из письма ведёт на `FRONTEND_URL/verify-email?token=...`, фронтенд отправляет токен на `POST /auth/verify-email/confirm`.
 - Восстановление пароля: `POST /auth/password/forgot` → письмо со ссылкой на `FRONTEND_URL/reset-password?token=...` → `POST /auth/password/reset`.
+
+### Профиль
+
+- `GET /me` — профиль; `PATCH /me` — изменить (передаются только изменяемые поля, `null` очищает необязательное поле).
+- `POST /me/email` — сменить email (нужен текущий пароль; новый email нужно подтвердить).
+- `PUT /me/avatar` (multipart, поле `file`) — загрузить фото, `DELETE /me/avatar` — удалить.
+- `avatarUrl` — временная ссылка на фото (действует `S3_PRESIGNED_URL_TTL_SECONDS`), её не нужно сохранять: при каждом `GET /me` выдаётся новая.
+
+### Файлы
+
+Файлы хранятся в приватном S3-хранилище, прямого доступа к нему нет. Бэкенд проверяет права и выдаёт временную ссылку. Тип файла проверяется по содержимому, а не по расширению.
 
 ### Почта
 
