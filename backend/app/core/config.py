@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:5173"
     FRONTEND_VERIFY_EMAIL_PATH: str = "/verify-email"
     FRONTEND_RESET_PASSWORD_PATH: str = "/reset-password"
+    FRONTEND_INVITATIONS_PATH: str = "/invitations"
 
     # Срок действия ссылок из писем
     EMAIL_VERIFICATION_TTL_HOURS: int = 24
@@ -78,6 +79,9 @@ class Settings(BaseSettings):
 
     # Фото профиля
     AVATAR_MAX_SIZE_MB: int = 5
+
+    # Срок действия приглашения в проект, дни
+    INVITATION_TTL_DAYS: int = 7
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

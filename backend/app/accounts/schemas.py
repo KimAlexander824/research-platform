@@ -76,6 +76,15 @@ class UserOut(BaseSchema):
     created_at: datetime
 
 
+class UserBriefOut(BaseSchema):
+    """Краткие данные пользователя для списков (участники, авторы и т.п.)."""
+
+    id: UUID
+    full_name: str
+    email: str
+    avatar_url: str | None = None
+
+
 def _clean_optional(value: str | None) -> str | None:
     if value is None:
         return None
