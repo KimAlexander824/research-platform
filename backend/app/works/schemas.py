@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import Field, field_validator, model_validator
 
 from app.accounts.schemas import UserBriefOut
-from app.core.schemas import BaseSchema
+from app.core.schemas import BaseSchema, ProgressOut
 from app.works.models import WorkType
 
 MAX_AUTHORS = 50
@@ -145,5 +145,6 @@ class WorkOut(BaseSchema):
     methodology: str | None
     start_date: date | None
     end_date: date | None
+    progress: ProgressOut
     created_at: datetime
     updated_at: datetime

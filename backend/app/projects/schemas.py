@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import EmailStr, Field, field_validator
 
 from app.accounts.schemas import UserBriefOut
-from app.core.schemas import BaseSchema
+from app.core.schemas import BaseSchema, ProgressOut
 from app.projects.models import InvitationStatus, ProjectRole
 
 
@@ -74,6 +74,7 @@ class ProjectOut(BaseSchema):
     owner: UserBriefOut
     my_role: ProjectRole
     members_count: int
+    progress: ProgressOut = Field(description="Завершённые этапы всех работ / все этапы (для руководителя — только его работ)")
     created_at: datetime
     updated_at: datetime
 

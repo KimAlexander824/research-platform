@@ -13,6 +13,7 @@ from app.accounts.service import SendEmail
 from app.audit.service import AuditLogger, diff
 from app.core.config import settings
 from app.core.pagination import PageParams, apply_sort, paginate
+from app.core.schemas import ProgressOut
 from app.projects.emails import invitation_message
 from app.projects.exceptions import (
     AlreadyMemberError,
@@ -135,12 +136,20 @@ class ProjectService:
         await self.db.execute(sa_delete(Project).where(Project.id == project.id))
         await self.db.commit()
 
-    async def enrich(self, user: User, projects: list[Project]) -> tuple[dict[UUID, ProjectRole], dict[UUID, int]]:
-        """Роль текущего пользователя и число участников — для списков."""
+    async def enrich(
+        self, user: User, projects: list[Project]
+    ) -> tuple[dict[UUID, ProjectRole], dict[UUID, int], dict[UUID, ProgressOut]]:
+        """Роль текущего пользователя, число участников и прогресс — для карточек и списков."""
+        # Импорт здесь: прогресс считается в модуле этапов, который сам зависит от проектов
+        from app.stages.progress import projects_progress
+
         ids = [p.id for p in projects]
         if not ids:
-            return {}, {}
-        return await self.projects.roles_for(user.id, ids), await self.projects.members_count(ids)
+            return {}, {}, {}
+        roles = await self.projects.roles_for(user.id, ids)
+        supervisor_projects = {pid: user.id for pid, role in roles.items() if role == ProjectRole.SUPERVISOR}
+        progresses = await projects_progress(self.db, ids, supervisor_projects=supervisor_projects)
+        return roles, await self.projects.members_count(ids), progresses
 
     # --- Участники ---
 

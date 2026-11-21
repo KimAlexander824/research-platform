@@ -183,6 +183,29 @@ uv run alembic downgrade -1      # откатить последнюю
 - Сроки: `startDate`, `endDate` (`YYYY-MM-DD`).
 - Фильтры: `type`, `search` (название, тема, описание); сортировка: `createdAt`, `updatedAt`, `title`, `startDate`, `endDate`.
 
+### Этапы (roadmap)
+
+`/projects/{projectId}/works/{workId}/stages` — этапы научной работы (по решению команды этапы у каждой работы, а не у проекта).
+
+Статусы: `not_started`, `in_progress`, `pending_review`, `needs_revision`, `completed`, `rejected`.
+
+| Кто | Переход |
+|---|---|
+| Исследователь (owner/editor) | `not_started → in_progress` (если этап не заблокирован) |
+| | `in_progress → pending_review` (если у работы есть руководитель на платформе) |
+| | `in_progress → completed` (необязательный этап, или у работы нет руководителя) |
+| | `needs_revision → in_progress` / `needs_revision → pending_review` |
+| Руководитель работы | `pending_review → completed` / `needs_revision` / `rejected` |
+| | `rejected → needs_revision` (пересмотреть отказ) |
+
+- Обязательный незавершённый этап блокирует все этапы после него: `isBlocked`, `blockedBy` (какой этап и в каком статусе).
+- `availableTransitions` — статусы, в которые текущий пользователь может перевести этап (для кнопок).
+- `rejected` — отказ в принятии этапа; руководитель может пересмотреть его и вернуть этап на доработку. `completed` — окончательный.
+- Обязательность можно поменять, а обязательный этап удалить — только пока он не начат.
+- Смена статуса: `POST .../stages/{id}/status` `{"status", "comment"}`; история: `GET .../stages/{id}/history`; порядок: `PUT .../stages/order` `{"stageIds": [...]}`.
+
+**Прогресс** (`progress: {completed, total, percent}`): у работы — завершённые этапы / все этапы работы; у проекта — завершённые этапы всех работ / все этапы всех работ. Для руководителя прогресс проекта считается только по его работам.
+
 ### Профиль
 
 - `GET /me` — профиль; `PATCH /me` — изменить (передаются только изменяемые поля, `null` очищает необязательное поле).

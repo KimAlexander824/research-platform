@@ -13,3 +13,15 @@ class BaseSchema(BaseModel):
         # так фронтенд сразу видит опечатки и попытки изменить недоступные поля
         extra="forbid",
     )
+
+
+class ProgressOut(BaseSchema):
+    """Прогресс: завершённые этапы / все этапы (правило согласовано с Frontend)."""
+
+    completed: int
+    total: int
+    percent: int
+
+
+def progress(completed: int, total: int) -> ProgressOut:
+    return ProgressOut(completed=completed, total=total, percent=round(completed * 100 / total) if total else 0)

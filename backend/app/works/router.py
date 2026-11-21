@@ -7,9 +7,11 @@ from fastapi import APIRouter, Depends, Query, status
 
 from app.accounts.dependencies import CurrentUserDep, DbSession
 from app.core.pagination import Page, PageParams, page_params
+from app.core.schemas import ProgressOut, progress
 from app.core.storage import Storage
 from app.projects.dependencies import ProjectAccessDep, StorageDep
 from app.projects.router import user_brief
+from app.stages.progress import works_progress
 from app.works.models import ResearchWork, WorkType
 from app.works.schemas import AuthorOut, WorkCreateIn, WorkOut, WorkUpdateIn
 from app.works.service import WorkService
@@ -24,7 +26,7 @@ def get_work_service(db: DbSession) -> WorkService:
 WorkServiceDep = Annotated[WorkService, Depends(get_work_service)]
 
 
-def work_out(work: ResearchWork, storage: Storage) -> WorkOut:
+def work_out(work: ResearchWork, storage: Storage, work_progress: ProgressOut | None = None) -> WorkOut:
     authors = [
         AuthorOut(
             user=user_brief(a.user, storage) if a.user else None,
@@ -53,6 +55,7 @@ def work_out(work: ResearchWork, storage: Storage) -> WorkOut:
         methodology=work.methodology,
         start_date=work.start_date,
         end_date=work.end_date,
+        progress=work_progress or progress(0, 0),
         created_at=work.created_at,
         updated_at=work.updated_at,
     )
@@ -65,6 +68,7 @@ def work_out(work: ResearchWork, storage: Storage) -> WorkOut:
     "(минус — по убыванию, по умолчанию `-updatedAt`).",
 )
 async def list_works(
+    db: DbSession,
     access: ProjectAccessDep,
     current: CurrentUserDep,
     service: WorkServiceDep,
@@ -75,7 +79,9 @@ async def list_works(
     sort: Annotated[str | None, Query()] = None,
 ) -> Page[WorkOut]:
     works, total = await service.list_works(access, current.user, params, search=search, work_type=work_type, sort=sort)
-    return Page(items=[work_out(w, storage) for w in works], total=total, page=params.page, page_size=params.page_size)
+    progresses = await works_progress(db, [w.id for w in works])
+    items = [work_out(w, storage, progresses[w.id]) for w in works]
+    return Page(items=items, total=total, page=params.page, page_size=params.page_size)
 
 
 @router.post(
@@ -97,9 +103,15 @@ async def create_work(
     description="Руководитель видит только работы, где он указан руководителем.",
 )
 async def get_work(
-    work_id: UUID, access: ProjectAccessDep, current: CurrentUserDep, service: WorkServiceDep, storage: StorageDep
+    work_id: UUID,
+    db: DbSession,
+    access: ProjectAccessDep,
+    current: CurrentUserDep,
+    service: WorkServiceDep,
+    storage: StorageDep,
 ) -> WorkOut:
-    return work_out(await service.get(access, current.user, work_id), storage)
+    work = await service.get(access, current.user, work_id)
+    return work_out(work, storage, (await works_progress(db, [work.id]))[work.id])
 
 
 @router.patch(
@@ -110,12 +122,14 @@ async def get_work(
 async def update_work(
     work_id: UUID,
     data: WorkUpdateIn,
+    db: DbSession,
     access: ProjectAccessDep,
     current: CurrentUserDep,
     service: WorkServiceDep,
     storage: StorageDep,
 ) -> WorkOut:
-    return work_out(await service.update(access, current.user, work_id, data), storage)
+    work = await service.update(access, current.user, work_id, data)
+    return work_out(work, storage, (await works_progress(db, [work.id]))[work.id])
 
 
 @router.delete("/{work_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Удалить научную работу")

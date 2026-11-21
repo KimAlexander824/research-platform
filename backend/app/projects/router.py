@@ -10,6 +10,7 @@ from app.accounts.dependencies import CurrentUserDep
 from app.accounts.models import User
 from app.accounts.schemas import UserBriefOut
 from app.core.pagination import Page, PageParams, page_params
+from app.core.schemas import ProgressOut
 from app.core.storage import Storage
 from app.projects.dependencies import ProjectAccessDep, ProjectServiceDep, StorageDep
 from app.projects.models import Project, ProjectInvitation, ProjectMember, ProjectRole
@@ -39,7 +40,9 @@ def user_brief(user: User, storage: Storage) -> UserBriefOut:
     )
 
 
-def project_out(project: Project, role: ProjectRole, members_count: int, storage: Storage) -> ProjectOut:
+def project_out(
+    project: Project, role: ProjectRole, members_count: int, project_progress: ProgressOut, storage: Storage
+) -> ProjectOut:
     return ProjectOut(
         id=project.id,
         title=project.title,
@@ -49,6 +52,7 @@ def project_out(project: Project, role: ProjectRole, members_count: int, storage
         owner=user_brief(project.owner, storage),
         my_role=role,
         members_count=members_count,
+        progress=project_progress,
         created_at=project.created_at,
         updated_at=project.updated_at,
     )
@@ -72,9 +76,13 @@ def invitation_out(invitation: ProjectInvitation, storage: Storage) -> Invitatio
     )
 
 
+async def _many(projects: list[Project], current: CurrentUserDep, service: ProjectServiceDep, storage: Storage) -> list[ProjectOut]:
+    roles, counts, progresses = await service.enrich(current.user, projects)
+    return [project_out(p, roles[p.id], counts.get(p.id, 0), progresses[p.id], storage) for p in projects]
+
+
 async def _one(project: Project, current: CurrentUserDep, service: ProjectServiceDep, storage: Storage) -> ProjectOut:
-    roles, counts = await service.enrich(current.user, [project])
-    return project_out(project, roles[project.id], counts.get(project.id, 0), storage)
+    return (await _many([project], current, service, storage))[0]
 
 
 # --- Проекты ---
@@ -109,8 +117,7 @@ async def list_projects(
     projects, total = await service.list_projects(
         current.user, params, search=search, status=project_status, role=role, sort=sort
     )
-    roles, counts = await service.enrich(current.user, projects)
-    items = [project_out(p, roles[p.id], counts.get(p.id, 0), storage) for p in projects]
+    items = await _many(projects, current, service, storage)
     return Page(items=items, total=total, page=params.page, page_size=params.page_size)
 
 
